@@ -26,14 +26,14 @@ class Service(object):
         @param password: пароль
         @param token: авторизационный токен, может быть указан вместо пароля
         """
-        self.http = http_client
+        self.__http = http_client
 
-        self.data = self.http.service()
-        self.albums_href = self.data['collections']['album-list']['href']
-        self.photos_href = self.data['collections']['photo-list']['href']
-        self.tags_href = self.data['collections']['tag-list']['href']
+        self.__data = self.__http.service()
+        self.albums_href = self.__data['collections']['album-list']['href']
+        self.photos_href = self.__data['collections']['photo-list']['href']
+        self.tags_href = self.__data['collections']['tag-list']['href']
 
-    def __get_entries_iter(self, url, scheme, count=None, rlimit=100):
+    def __get_entries_iter(self, url, scheme, count=None, page_size=100):
         """
         Возвращает итератор по объектам, которые определяются параметром scheme.
 
@@ -49,15 +49,15 @@ class Service(object):
         @rtype:        __generator
         """
         # проверяем, чтобы максимально в выдаче стояло не больше 100 элементов
-        if rlimit > 100:
-            rlimit = 100
+        if page_size > 100:
+            page_size = 100
         # если количество запрашиваемых элементов не больше 100, столько и запросим
         if count and count < 100:
-            rlimit = count
+            page_size = count
         # добавляем параметр лимита в запрос
-        next_item = url + ('?' if url.find('?') < 0 else '&') + 'limit={0}'.format(rlimit)
+        next_item = url + ('?' if url.find('?') < 0 else '&') + 'limit={0}'.format(page_size)
         while next_item:
-            data = self.http.request(next_item)
+            data = self.__http.request(next_item)
             for i in data['entries']:
                 yield scheme(self, i)
                 if count is not None:
@@ -77,7 +77,7 @@ class Service(object):
         @param rlimit: количество альбомов, возвращаемых в одном запросе,
                        но не больше 100 (ограничение Яндекс для постраничной
                        выдачи коллекций)
-        @rtype: __generator of YandexAlbum
+        @rtype: __generator of Album
         """
         return self.__get_entries_iter(self.albums_href, Album, count, rlimit)
 
@@ -85,7 +85,7 @@ class Service(object):
         """
         Возвращает все альбомы. Если альбомов очень много, разумнее
         воспользоваться генератором iter_albums.
-        @rtype: list of YandexAlbum
+        @rtype: list of Album
         """
         return list(self.get_albums_iter())
 
@@ -98,7 +98,7 @@ class Service(object):
         @param rlimit: количество фотографий, возвращаемых в одном запросе,
                        но не больше 100 (ограничение Яндекс для постраничной
                        выдачи коллекций)
-        @rtype: __generator of YandexPhoto
+        @rtype: __generator of Photo
         """
         return self.__get_entries_iter(self.photos_href, Photo, count, rlimit)
 
@@ -106,7 +106,7 @@ class Service(object):
         """
         Возвращает все фотографии. Если фотографий очень много, разумнее
         воспользоваться генератором iter_photos.
-        @rtype: list of YandexPhoto
+        @rtype: list of Photo
         """
         return list(self.get_photos_iter())
 
@@ -121,7 +121,7 @@ class Service(object):
         Создать новый альбом
         @param title: Название
         @param summary: Описание
-        @type parent: YandexAlbum
+        @type parent: Album
         @param parent: Родительский альбом
         @return: Новый созданный альбом
         """
@@ -130,11 +130,8 @@ class Service(object):
             data['summary'] = summary
         if parent:
             data['links'] = {'album': parent.link_self}
-        answer = self.http.put(self.albums_href, data)
-        return YandexAlbum(self, answer)
-
-    def __str__(self):
-        return pprint.pformat(self.data)
+        answer = self.__http.put(self.albums_href, data)
+        return Album(self, answer)
 
     @property
     def id(self):
@@ -146,7 +143,7 @@ class Service(object):
         return None
 
 
-class YandexEntry(object):
+class Entry(object):
     def __init__(self, service, data):
         """
         @type   service: YandexService
@@ -226,7 +223,7 @@ class YandexEntry(object):
         return self.id == other.id
 
 
-class YandexAlbum(YandexEntry):
+class Album(Entry):
     @property
     def link_photos(self):
         return self.link('photos')
@@ -267,9 +264,9 @@ class YandexAlbum(YandexEntry):
         return self.service.create_album(title, summary, self)
 
 
-class YandexPhoto(YandexEntry):
+class Photo(Entry):
     def __init__(self, service, data):
-        YandexEntry.__init__(self, service, data)
+        Entry.__init__(self, service, data)
         imgs = self.data['img']
         self.images = sorted([YandexImage(self, name, imgs[name]) for name in imgs],
                              key=lambda x: x.w)
@@ -299,7 +296,7 @@ class YandexPhoto(YandexEntry):
         return self.data.get('tags', {})
 
 
-class YandexImage(object):
+class Image(object):
     def __init__(self, photo, name, data):
         self.photo = photo
         self.name = name
@@ -315,7 +312,7 @@ class YandexImage(object):
         return '<{} {}x{}>'.format(self.name, self.w, self.h)
 
 
-class YandexTag(object):
+class Tag(object):
     def __init__(self, data):
         self.data = data
 

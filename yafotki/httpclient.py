@@ -22,20 +22,25 @@ class HttpClient(object):
 
     @staticmethod
     def create_using_login(username, password):
-        token = HttpClient.auth(username, password)
+        token = HttpClient.__auth(username, password)
         return HttpClient(username, token)
 
     @staticmethod
-    def http_request(url, headers=None, data=None, method=None, retcode=http.client.OK):
+    def __http_request(url, headers=None, data=None, method=None, retcode=http.client.OK):
         headers = headers or {}
         request = urllib.request.Request(url, data=data, headers=headers, method=method)
         responce = urllib.request.urlopen(request)
         if responce.status != retcode:
             raise http.client.HTTPException()
-        return responce.read().decode('utf-8')
+        return responce.read()
 
     @staticmethod
-    def extract(tag, text):
+    def __http_request_str(url, headers=None, data=None, method=None, retcode=http.client.OK):
+        responce = HttpClient.__http_request(url, headers, data, method, retcode)
+        return responce.decode('utf-8')
+
+    @staticmethod
+    def __extract(tag, text):
         pattern = '<{0}>(.*?)</{0}>'.format(tag)
         match = re.search(pattern, text)
         if not match:
@@ -43,11 +48,11 @@ class HttpClient(object):
         return match.group(1)
 
     @staticmethod
-    def auth(username, password):
-        answer = HttpClient.http_request(HttpClient.URL_AUTH_KEY)
+    def __auth(username, password):
+        answer = HttpClient.__http_request_str(HttpClient.URL_AUTH_KEY)
         # Извлечение данных об открытом ключе
-        public_key = HttpClient.extract('key', answer)
-        request_id = HttpClient.extract('request_id', answer)
+        public_key = HttpClient.__extract('key', answer)
+        request_id = HttpClient.__extract('request_id', answer)
         # Шаг 2. Шифрование данных открытым ключом
         message = '<credentials login="{0}" password="{1}"/>'
         message = message.format(username, password)
@@ -56,20 +61,24 @@ class HttpClient(object):
         headers = {'Content-Type': 'application/x-www-form-urlencoded'}
         params = {'request_id': request_id, 'credentials': encoded}
         data = urllib.parse.urlencode(params).encode()
-        responce = HttpClient.http_request(HttpClient.URL_AUTH_TOKEN, headers, data, method='POST')
-        return HttpClient.extract('token', responce)
+        responce = HttpClient.__http_request_str(HttpClient.URL_AUTH_TOKEN, headers, data, method='POST')
+        return HttpClient.__extract('token', responce)
 
     def __init__(self, username, token):
         self.username = username
         self.token = token
 
-    def request(self, url, headers=None, data=None, method=None, retcode=http.client.OK):
-        request_headers = {
+    def __get_headers(self, headers=None):
+        default = {
             'Accept': 'application/json',
             'Authorization': 'FimpToken realm="fotki.yandex.ru", token="{0}"'.format(self.token),
         }
-        request_headers.update(headers or {})
-        responce = self.http_request(url, request_headers, data, method, retcode)
+        default.update(headers or {})
+        return default
+
+    def request(self, url, headers=None, data=None, method=None, retcode=http.client.OK):
+        headers = self.__get_headers(headers)
+        responce = self.__http_request_str(url, headers, data, method, retcode)
         return json.loads(responce)
 
     def get(self, url):
@@ -87,11 +96,14 @@ class HttpClient(object):
         url = self.URL_SERVICE_DOC.format(author=self.username)
         return self.get(url)
 
-    def upload(self, url, filename):
-        mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+    def upload(self, url, data, mimetype):
         headers = {'Content-Type': mimetype}
-        data = bytes(open(filename, 'rb').read())
         return self.request(url, headers, data, 'POST', http.client.CREATED)
+
+    def upload_file(self, url, filename):
+        mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        data = bytes(open(filename, 'rb').read())
+        return self.upload(url, data, mimetype)
 
     def download(self, url):
         pass
