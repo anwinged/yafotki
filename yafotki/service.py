@@ -5,11 +5,39 @@ import time
 from . import httpclient
 
 
-class YandexError(Exception):
-    pass
+class Basement(object):
+
+    def __init__(self, http_client):
+        """
+        :type http_client: httpclient.HttpClient
+        """
+        self.__http = http_client
+
+    @property
+    def _http(self):
+        return self.__http
+
+    def _get_entries_iter(self, service, url, scheme, count=None, page_size=100):
+        # проверяем, чтобы максимально в выдаче стояло не больше 100 элементов
+        if page_size > 100:
+            page_size = 100
+        # если количество запрашиваемых элементов не больше 100, столько и запросим
+        if count and count < 100:
+            page_size = count
+        # добавляем параметр лимита в запрос
+        next_item = url + ('?' if url.find('?') < 0 else '&') + 'limit={0}'.format(page_size)
+        while next_item:
+            data = self.__http.get(next_item)
+            for i in data['entries']:
+                yield scheme(service, i)
+                if count is not None:
+                    count -= 1
+                    if count <= 0:
+                        return
+            next_item = data['links'].get('next')
 
 
-class Service(object):
+class Service(Basement):
 
     @staticmethod
     def create_using_token(username, token):
@@ -20,259 +48,159 @@ class Service(object):
         return Service(httpclient.HttpClient.create_using_login(username, password))
 
     def __init__(self, http_client):
-        """
-        Инициализировать работу с сервисом Яндекс.Фотки
-        @param username: имя пользователя
-        @param password: пароль
-        @param token: авторизационный токен, может быть указан вместо пароля
-        """
-        self.__http = http_client
+        Basement.__init__(self, http_client)
+        self.__data = self._http.service()
+        self.__albums_href = self.__data['collections']['album-list']['href']
+        self.__photos_href = self.__data['collections']['photo-list']['href']
+        self.__tags_href = self.__data['collections']['tag-list']['href']
 
-        self.__data = self.__http.service()
-        self.albums_href = self.__data['collections']['album-list']['href']
-        self.photos_href = self.__data['collections']['photo-list']['href']
-        self.tags_href = self.__data['collections']['tag-list']['href']
-
-    def __get_entries_iter(self, url, scheme, count=None, page_size=100):
-        """
-        Возвращает итератор по объектам, которые определяются параметром scheme.
-
-        @param url:    адрес коллекции
-        @param scheme: Объект, в который будут преобразованы элементы
-        @type  count:  int
-        @param count:  количество возвращаемых объектов,
-                       None - все объекты
-        @type  rlimit: int
-        @param rlimit: количество объектов, возвращаемых в одном запросе,
-                       но не больше 100 (ограничение Яндекс для постраничной
-                       выдачи коллекций)
-        @rtype:        __generator
-        """
-        # проверяем, чтобы максимально в выдаче стояло не больше 100 элементов
-        if page_size > 100:
-            page_size = 100
-        # если количество запрашиваемых элементов не больше 100, столько и запросим
-        if count and count < 100:
-            page_size = count
-        # добавляем параметр лимита в запрос
-        next_item = url + ('?' if url.find('?') < 0 else '&') + 'limit={0}'.format(page_size)
-        while next_item:
-            data = self.__http.request(next_item)
-            for i in data['entries']:
-                yield scheme(self, i)
-                if count is not None:
-                    count -= 1
-                    if count <= 0:
-                        return
-            next_item = data['links'].get('next')
-
-    def get_albums_iter(self, count=None, rlimit=100):
-        """
-        Возвращает итератор по альбомам. Если вы хотите построить иерархию альбомов,
-        разумнее воспользоваться методом get_albums для получения сразу всех альбомов.
-        @type  count: int
-        @param count: количество возвращаемых альбомов,
-                      None - все альбомы
-        @type  rlimit: int
-        @param rlimit: количество альбомов, возвращаемых в одном запросе,
-                       но не больше 100 (ограничение Яндекс для постраничной
-                       выдачи коллекций)
-        @rtype: __generator of Album
-        """
-        return self.__get_entries_iter(self.albums_href, Album, count, rlimit)
+    def get_albums_iter(self, count=None, page_size=100):
+        return self._get_entries_iter(self, self.__albums_href, Album, count, page_size)
 
     def get_albums(self):
         """
         Возвращает все альбомы. Если альбомов очень много, разумнее
         воспользоваться генератором iter_albums.
-        @rtype: list of Album
+        :rtype: list of Album
         """
         return list(self.get_albums_iter())
 
-    def get_photos_iter(self, count=None, rlimit=100):
-        """
-        @type  count: int
-        @param count: количество возвращаемых фотографий,
-                      None - все фотографии
-        @type  rlimit: int
-        @param rlimit: количество фотографий, возвращаемых в одном запросе,
-                       но не больше 100 (ограничение Яндекс для постраничной
-                       выдачи коллекций)
-        @rtype: __generator of Photo
-        """
-        return self.__get_entries_iter(self.photos_href, Photo, count, rlimit)
+    def get_photos_iter(self, count=None, page_size=100):
+        return self._get_entries_iter(self, self.__photos_href, Photo, count, page_size)
 
     def get_photos(self):
         """
         Возвращает все фотографии. Если фотографий очень много, разумнее
         воспользоваться генератором iter_photos.
-        @rtype: list of Photo
+        :rtype: list of Photo
         """
         return list(self.get_photos_iter())
 
-    def get_tags_iter(self, count=None, rlimit=100):
-        return self.__get_entries_iter(self.tags_href, Tag, count, rlimit)
+    def get_tags_iter(self, count=None, page_size=100):
+        return self._get_entries_iter(self, self.__tags_href, Tag, count, page_size)
 
     def get_tags(self):
         return list(self.get_tags_iter())
 
     def create_album(self, title, summary=None, parent=None):
-        """
-        Создать новый альбом
-        @param title: Название
-        @param summary: Описание
-        @type parent: Album
-        @param parent: Родительский альбом
-        @return: Новый созданный альбом
-        """
-        data = {'title': title}
-        if summary:
-            data['summary'] = summary
+        data = {'title': title, 'summary': summary}
         if parent:
+            if not isinstance(parent, Album):
+                raise ValueError('parent must be Album reference')
             data['links'] = {'album': parent.link_self}
-        answer = self.__http.put(self.albums_href, data)
-        return Album(self, answer)
-
-    @property
-    def id(self):
-        """Уникальный идентификатор сущности"""
-        return None
-
-    @property
-    def link_self(self):
-        return None
+        responce = self._http.put(self.__albums_href, data)
+        return Album(self, responce)
 
 
-class Entry(object):
-    def __init__(self, service, data):
-        """
-        @type   service: YandexService
-        @type   data: dict
-        @param  data: словарь параметров сущности
-        """
-        self.service = service
-        self.data = data
+class Entry(Basement):
 
     @staticmethod
-    def convert_time(ts, tz=True):
+    def _convert_time(ts):
         if not ts:
             return None
         dt = datetime.datetime.strptime(ts, '%Y-%m-%dT%H:%M:%SZ')
-        if tz:
-            dt = dt - datetime.timedelta(seconds=time.timezone)
+        dt = dt - datetime.timedelta(seconds=time.timezone)
         return dt
 
-    @property
-    def id(self):
-        """Уникальный идентификатор сущности"""
-        return self.data['id']
+    def __init__(self, service, data):
+        Basement.__init__(self, service._http)
+        self.__service = service
+        self.__data = data
+
+        self.id = data.get('id')
+        self.title = data.get('title')
+        self.author = data.get('author')
+        self.updated = self._convert_time(data.get('updated'))
+
+        links = data.get('links', {})
+        self.link_self = links.get('self')
+        self.link_edit = links.get('edit')
+        self.link_alternate = links.get('alternate')
 
     @property
-    def title(self):
-        """Заголовок сущности"""
-        return self.data.get('title', '')
+    def service(self):
+        return self.__service
 
-    def link(self, name='self'):
-        return self.data['links'].get(name)
+    def _edit(self, updated_fields):
+        new_data = self._http.put(self.link_self, updated_fields)
+        self.__init__(self.service, new_data)
 
-    @property
-    def link_self(self):
-        return self.link('self')
+    def get_raw_data(self):
+        return self.__data
 
-    @property
-    def link_edit(self):
-        return self.link('edit')
-
-    @property
-    def link_parent(self):
-        return self.link('album')
-
-    @property
-    def link_alt(self):
-        return self.link('alternate')
-
-    @property
-    def created(self):
-        return self.convert_time(self.data.get('created'), False)
-
-    @property
-    def edited(self):
-        return self.convert_time(self.data.get('edited'))
-
-    @property
-    def published(self):
-        return self.convert_time(self.data.get('published'))
-
-    def update(self):
-        self.data = self.service.request(self.link_self)
-
-    def edit(self, upd_data):
-        data = self.service.request(self.link_edit)
-        data.update(upd_data)
-        data = json.dumps(data)
-        headers = {'Content-Type': 'application/json;  type=entry'}
-        self.data = self.service.request(self.link_self, data, headers, method='PUT')
+    def refresh(self):
+        data = self._http.get(self.link_self)
+        self.__init__(self.service, data)
 
     def delete(self):
-        self.service.request(self.link_self, code=204, method='DELETE')
-
-    # def __str__(self):
-    # return pprint.pformat(self.data)
+        self._http.delete(self.link_self)
 
     def __eq__(self, other):
         return self.id == other.id
 
 
 class Album(Entry):
-    @property
-    def link_photos(self):
-        return self.link('photos')
 
-    @property
-    def photos(self):
-        return list(self.iter_photos())
+    def __init__(self, service, data):
+        Entry.__init__(self, service, data)
 
-    @property
-    def count(self):
-        return self.data.get('imageCount', 0)
+        self.summary = data.get('summary')
+        self.published = self._convert_time(data.get('published'))
+        self.edited = self._convert_time(data.get('edited'))
+        self.protected = data.get('protected')
+        self.password = data.get('password')
+        self.count = data.get('imageCount')
 
-    def upload(self, filename):
-        # При загрузке данных надо обернуть все в bytearray, иначе происходит ошибка Unicode
-        # чертовы строки в python
-        # http://bugs.python.org/issue12398
-        data = bytearray(open(filename, 'rb').read())
-        mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
-        headers = {'Content-Type': mimetype}
-        answer = self.service.request(self.link_photos, data, headers, code=201)
-        photo = YandexPhoto(self.service, answer)
-        return photo
+        links = data.get('links', {})
+        self.link_photos = links.get('photos')
+        self.link_cover = links.get('cover')
+        self.link_ymapsml = links.get('ymapsml')
+
+    def upload(self, data, mimetype):
+        responce = self._http.upload(self.link_photos, data, mimetype)
+        return Photo(self.service, responce)
+
+    def upload_file(self, filename):
+        responce = self._http.upload_file(self.link_photos, filename)
+        return Photo(self.service, responce)
 
     def edit(self, title=None, summary=None, parent=None):
-        data = {}
-        if title is not None:
-            data['title'] = title
-        if summary is not None:
-            data['summary'] = summary
+        data = {'title': title, 'summary': summary}
         if parent is not None:
-            data['links'] = {'album': parent.get_link()}
-        YandexEntry.edit(self, data)
+            if not isinstance(parent, Album):
+                raise ValueError('parent must be Album reference')
+            data['links'] = {'album': parent.link_self}
+        self._edit(data)
 
-    def iter_photos(self, count=None, rlimit=100):
-        return self.service.iter_entries(self.link_photos, YandexPhoto, count, rlimit)
+    def get_photos_iter(self, count=None, page_size=100):
+        return self._get_entries_iter(self.service, self.link_photos, Photo, count, page_size)
+
+    def get_photos(self):
+        return list(self.get_photos_iter())
 
     def create_album(self, title, summary=None):
         return self.service.create_album(title, summary, self)
 
 
 class Photo(Entry):
+
     def __init__(self, service, data):
         Entry.__init__(self, service, data)
-        imgs = self.data['img']
-        self.images = sorted([YandexImage(self, name, imgs[name]) for name in imgs],
-                             key=lambda x: x.w)
 
-    def image(self, name):
-        return next((x for x in self.images if x.name == name), None)
+        self.content = data.get('content')
+        self.published = self._convert_time(data.get('published'))
+        self.edited = self._convert_time(data.get('edited'))
+        self.access = data.get('access')
+        self.xxx = data.get('xxx')
+        self.hide_original = data.get('hideOriginal')
+        self.disable_comments = data.get('disableComments')
+
+        links = data.get('links', {})
+        self.link_edit_media = links.get('editMedia')
+        self.link_album = links.get('album')
+
+        images = data.get('img', {})
+        self.images = {name: Image(self, name, data) for name, data in images.items()}
 
     def edit(self, title=None, summary=None, xxx=None,
              disable_comments=None, hide_original=None, access=None):
@@ -289,30 +217,27 @@ class Photo(Entry):
             data['hideOriginal'] = bool(hide_original)
         if access is not None:
             data['access'] = access
-        YandexEntry.edit(self, data)
-
-    @property
-    def tags(self):
-        return self.data.get('tags', {})
+        self._edit(data)
 
 
 class Image(object):
     def __init__(self, photo, name, data):
         self.photo = photo
         self.name = name
-        self.w = data['width']
-        self.h = data['height']
+        self.width = data['width']
+        self.height = data['height']
         self.size = data.get('bytesize')
         self.href = data['href']
 
     def download(self):
-        return urllib.request.urlopen(self.href).read()
+        return self.photo._http.download(self.href)
 
     def __repr__(self):
-        return '<{} {}x{}>'.format(self.name, self.w, self.h)
+        return '<{} {}x{}>'.format(self.name, self.width, self.height)
 
 
 class Tag(object):
+
     def __init__(self, data):
         self.data = data
 

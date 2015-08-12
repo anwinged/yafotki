@@ -65,40 +65,44 @@ class HttpClient(object):
         return HttpClient.__extract('token', responce)
 
     def __init__(self, username, token):
-        self.username = username
-        self.token = token
+        self.__username = username
+        self.__token = token
+
+    def get_token(self):
+        return self.__token
 
     def __get_headers(self, headers=None):
         default = {
             'Accept': 'application/json',
-            'Authorization': 'FimpToken realm="fotki.yandex.ru", token="{0}"'.format(self.token),
+            'Authorization': 'FimpToken realm="fotki.yandex.ru", token="{0}"'.format(self.__token),
         }
         default.update(headers or {})
         return default
 
-    def request(self, url, headers=None, data=None, method=None, retcode=http.client.OK):
+    def __request(self, url, headers=None, data=None, method=None, retcode=http.client.OK):
         headers = self.__get_headers(headers)
         responce = self.__http_request_str(url, headers, data, method, retcode)
         return json.loads(responce)
 
     def get(self, url):
-        return self.request(url, method='GET')
+        return self.__request(url, method='GET')
 
     def put(self, url, data):
         headers = {'Content-Type': 'application/json;  type=entry'}
-        data = json.dumps(data).encode('utf-8')
-        return self.request(url, headers, data, 'PUT', http.client.OK)
+        filtered = {k: v for k, v in data.iter_items() if v is not None}
+        data = json.dumps(filtered).encode('utf-8')
+        return self.__request(url, headers, data, 'PUT', http.client.OK)
 
     def delete(self, url):
-        return self.request(url, method='DELETE', retcode=http.client.NO_CONTENT)
+        return self.__request(url, method='DELETE', retcode=http.client.NO_CONTENT)
 
     def service(self):
-        url = self.URL_SERVICE_DOC.format(author=self.username)
+        url = self.URL_SERVICE_DOC.format(author=self.__username)
         return self.get(url)
 
     def upload(self, url, data, mimetype):
         headers = {'Content-Type': mimetype}
-        return self.request(url, headers, data, 'POST', http.client.CREATED)
+        return self.__request(url, headers, data, 'POST', http.client.CREATED)
 
     def upload_file(self, url, filename):
         mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
