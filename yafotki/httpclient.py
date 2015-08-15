@@ -49,6 +49,11 @@ class HttpClient(object):
 
     @staticmethod
     def __auth(username, password):
+        """
+        :type username: str
+        :type password: str
+        :rtype: str
+        """
         answer = HttpClient.__http_request_str(HttpClient.URL_AUTH_KEY)
         # Извлечение данных об открытом ключе
         public_key = HttpClient.__extract('key', answer)
@@ -110,4 +115,5 @@ class HttpClient(object):
         return self.upload(url, data, mimetype)
 
     def download(self, url):
-        pass
+        headers = self.__get_headers()
+        return self.__http_request(url, headers)
