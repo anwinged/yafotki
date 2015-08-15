@@ -1,4 +1,3 @@
-import pprint
 import datetime
 import time
 
@@ -14,7 +13,7 @@ class Basement(object):
         self.__http = http_client
 
     @property
-    def _http(self):
+    def http(self):
         return self.__http
 
     def _get_entries_iter(self, service, url, scheme, count=None, page_size=100):
@@ -27,7 +26,7 @@ class Basement(object):
         # добавляем параметр лимита в запрос
         next_item = url + ('?' if url.find('?') < 0 else '&') + 'limit={0}'.format(page_size)
         while next_item:
-            data = self.__http.get(next_item)
+            data = self.http.get(next_item)
             for i in data['entries']:
                 yield scheme(service, i)
                 if count is not None:
@@ -49,7 +48,7 @@ class Service(Basement):
 
     def __init__(self, http_client):
         Basement.__init__(self, http_client)
-        self.__data = self._http.service()
+        self.__data = self.http.service()
         self.__albums_href = self.__data['collections']['album-list']['href']
         self.__photos_href = self.__data['collections']['photo-list']['href']
         self.__tags_href = self.__data['collections']['tag-list']['href']
@@ -88,7 +87,7 @@ class Service(Basement):
             if not isinstance(parent, Album):
                 raise ValueError('parent must be Album reference')
             data['links'] = {'album': parent.link_self}
-        responce = self._http.put(self.__albums_href, data)
+        responce = self.http.put(self.__albums_href, data)
         return Album(self, responce)
 
 
@@ -103,7 +102,7 @@ class Entry(Basement):
         return dt
 
     def __init__(self, service, data):
-        Basement.__init__(self, service._http)
+        Basement.__init__(self, service.http)
         self.__service = service
         self.__data = data
 
@@ -122,18 +121,18 @@ class Entry(Basement):
         return self.__service
 
     def _edit(self, updated_fields):
-        new_data = self._http.put(self.link_self, updated_fields)
+        new_data = self.http.put(self.link_self, updated_fields)
         self.__init__(self.service, new_data)
 
     def get_raw_data(self):
         return self.__data
 
     def refresh(self):
-        data = self._http.get(self.link_self)
+        data = self.http.get(self.link_self)
         self.__init__(self.service, data)
 
     def delete(self):
-        self._http.delete(self.link_self)
+        self.http.delete(self.link_self)
 
     def __eq__(self, other):
         return self.id == other.id
@@ -157,11 +156,11 @@ class Album(Entry):
         self.link_ymapsml = links.get('ymapsml')
 
     def upload(self, data, mimetype):
-        responce = self._http.upload(self.link_photos, data, mimetype)
+        responce = self.http.upload(self.link_photos, data, mimetype)
         return Photo(self.service, responce)
 
     def upload_file(self, filename):
-        responce = self._http.upload_file(self.link_photos, filename)
+        responce = self.http.upload_file(self.link_photos, filename)
         return Photo(self.service, responce)
 
     def edit(self, title=None, summary=None, parent=None):
@@ -230,10 +229,10 @@ class Image(object):
         self.href = data['href']
 
     def download(self):
-        return self.photo._http.download(self.href)
+        return self.photo.http.download(self.href)
 
     def __repr__(self):
-        return '<{} {}x{}>'.format(self.name, self.width, self.height)
+        return '<Image:{} {}x{}>'.format(self.name, self.width, self.height)
 
 
 class Tag(object):
@@ -241,5 +240,5 @@ class Tag(object):
     def __init__(self, data):
         self.data = data
 
-    def __str__(self):
-        return pprint.pformat(self.data)
+    def __repr__(self):
+        return '<Tag:{}>'.format('#tagname#')
