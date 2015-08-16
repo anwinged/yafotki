@@ -48,16 +48,22 @@ class HttpClient(object):
         return match.group(1)
 
     @staticmethod
+    def __get_auth_key():
+        responce = HttpClient.__http_request_str(HttpClient.URL_AUTH_KEY)
+        # Извлечение данных об открытом ключе
+        public_key = HttpClient.__extract('key', responce)
+        request_id = HttpClient.__extract('request_id', responce)
+        return public_key, request_id
+
+    @staticmethod
     def __auth(username, password):
         """
         :type username: str
         :type password: str
         :rtype: str
         """
-        answer = HttpClient.__http_request_str(HttpClient.URL_AUTH_KEY)
         # Извлечение данных об открытом ключе
-        public_key = HttpClient.__extract('key', answer)
-        request_id = HttpClient.__extract('request_id', answer)
+        public_key, request_id = HttpClient.__get_auth_key()
         # Шаг 2. Шифрование данных открытым ключом
         message = '<credentials login="{0}" password="{1}"/>'
         message = message.format(username, password)

@@ -155,6 +155,9 @@ class Album(Entry):
         self.link_cover = links.get('cover')
         self.link_ymapsml = links.get('ymapsml')
 
+    def __repr__(self):
+        return '<Album:{}>'.format(self.title)
+
     def upload(self, data, mimetype):
         responce = self.http.upload(self.link_photos, data, mimetype)
         return Photo(self.service, responce)
@@ -221,24 +224,36 @@ class Photo(Entry):
 
 class Image(object):
     def __init__(self, photo, name, data):
-        self.photo = photo
+        self.__photo = photo
         self.name = name
-        self.width = data['width']
-        self.height = data['height']
+        self.width = data.get('width')
+        self.height = data.get('height')
         self.size = data.get('bytesize')
-        self.href = data['href']
+        self.href = data.get('href')
 
     def download(self):
-        return self.photo.http.download(self.href)
+        return self.__photo.http.download(self.href)
 
     def __repr__(self):
         return '<Image:{} {}x{}>'.format(self.name, self.width, self.height)
 
 
-class Tag(object):
+class Tag(Entry):
 
-    def __init__(self, data):
-        self.data = data
+    def __init__(self, service, data):
+        Entry.__init__(self, service, data)
+        self.count = data.get('imageCount')
+        links = data.get('links')
+        self.link_photos = links.get('photos')
 
     def __repr__(self):
-        return '<Tag:{}>'.format('#tagname#')
+        return '<Tag:{}>'.format(self.title)
+
+    def get_photos_iter(self, count=None, page_size=100):
+        return self._get_entries_iter(self.service, self.link_photos, Photo, count, page_size)
+
+    def get_photos(self):
+        return list(self.get_photos_iter())
+
+    def edit(self, title):
+        self._edit({'title': title})

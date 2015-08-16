@@ -10,8 +10,12 @@ def encode(public_key, message):
     """
     Закодировать сообщение с помощью расширенного алгоритма
     RSA для использования с сервисом Яндекс.Фотки
-    @param public_key: открытый ключ
-    @param message:    сообщение
+
+    :param public_key: открытый ключ
+    :type public_key: str
+    :param message: сообщение для кодрования
+    :type message: str
+    :rtype: str
     """
     NSTR, ESTR = public_key.split("#")
     DATA_ARR = [ord(x) for x in message]
